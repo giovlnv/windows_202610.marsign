@@ -68,7 +68,7 @@ def sign(ipa, p12, profile, password="", output=None):
     if "*" in info["bundle_id"]:
         raise ValueError("Wildcard profiles aren't supported; use the app's own profile")
     cmd = [
-        str(ensure_zsign()), "-f",
+        str(ensure_zsign()), "-f", "-E", "-W",
         "-k", str(p12), "-p", password,
         "-m", str(profile),
         "-b", info["bundle_id"],
@@ -82,3 +82,16 @@ def sign(ipa, p12, profile, password="", output=None):
         errors = [l for l in lines if re.search(r"fail|unknown|invalid|can't|cannot", l, re.I)]
         raise RuntimeError("zsign failed: " + ("; ".join(errors[:3]) or f"exit code {result.returncode}"))
     return output, info
+
+
+def ipa_info(path):
+    with zipfile.ZipFile(path) as z:
+        name = next((n for n in z.namelist() if re.fullmatch(r"Payload/[^/]+\.app/Info\.plist", n)), None)
+        if not name:
+            raise ValueError(f"No app found inside {path}")
+        info = plistlib.loads(z.read(name))
+    return {
+        "bundle_id": info["CFBundleIdentifier"],
+        "name": info.get("CFBundleDisplayName") or info.get("CFBundleName") or info["CFBundleIdentifier"],
+        "version": info.get("CFBundleShortVersionString", "?"),
+    }

@@ -1,1 +1,6 @@
 pymobiledevice3>=11.42
+Anisette>=1.2.4
+srp>=1.0.22
+cryptography>=44
+certifi>=2024.1.1
+requests>=2.31
