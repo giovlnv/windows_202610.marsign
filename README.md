@@ -10,8 +10,14 @@ Personal installer and weekly re-signer for my own iPhone apps (Marscade, Famili
 
 ## Commands
 
-    py marsign.py login                      sign in with your Apple ID (2FA code asked once)
-    py marsign.py install app.ipa            sign with your Apple ID and install
+    py marsign.py login                      sign in; the password is kept in Windows Credential Manager
+    py marsign.py install app.ipa            sign with your Apple ID, install, and remember it for refresh
+    py marsign.py status                     apps installed through Marsign and days left
+    py marsign.py refresh [--force]          re-sign apps with 2 days or less left
+    py marsign.py wifi                       let Marsign reach the iPhone over Wi-Fi (once, over USB)
+    py marsign.py schedule [--time 20:00]    daily automatic refresh via Task Scheduler
+    py marsign.py unschedule                 remove the scheduled refresh
+    py marsign.py uninstall BUNDLE_ID        remove an app from the iPhone
     py marsign.py devices                    list connected iPhones
     py marsign.py apps                       list installed user apps
     py marsign.py logout                     forget the saved Apple session
@@ -26,7 +32,9 @@ Manual signing, without an Apple ID:
 ## Where things are kept
 
 `%LOCALAPPDATA%\Marsign`: the Apple session token, this PC's device identity, the signing key and
-certificate, and provisioning profiles. The password is never saved.
+certificate, provisioning profiles, a copy of each installed .ipa, and `refresh.log`. The Apple ID
+password is kept in Windows Credential Manager (skip with `login --no-save`) so refreshes can sign in
+again on their own; `logout` removes it.
 
 Apple rejects locally generated device identity data now, so Marsign gets it from an anisette v3 server:
 `mac-ani.jkcoxson.com` by default, the same as iloader. Alternatives are `new.ani.sidestore.io` and
@@ -48,4 +56,4 @@ The Apple sign-in and developer-portal flow follows [iPASide](https://github.com
 1. Install over USB (done)
 2. Sign with zsign (done)
 3. Free Apple ID certificate and provisioning profile (done)
-4. One command for all apps, automatic weekly refresh over Wi-Fi
+4. One command for all apps, automatic weekly refresh over Wi-Fi (done)

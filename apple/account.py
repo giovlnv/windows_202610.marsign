@@ -5,6 +5,7 @@ import json
 import plistlib
 import time
 
+import keyring
 import requests
 import srp._pysrp as srp
 from cryptography.hazmat.primitives import padding
@@ -204,7 +205,10 @@ def _app_token(spd):
     return token["token"], token.get("expiry")
 
 
-def login(email, password, ask_code):
+KEYRING_SERVICE = "Marsign"
+
+
+def login(email, password, ask_code, save_password=False):
     spd, second = _srp_login(email, password)
     if second:
         _second_factor(spd, second, ask_code)
@@ -215,7 +219,28 @@ def login(email, password, ask_code):
     token, expiry = _app_token(spd)
     session = {"email": email, "adsid": spd["adsid"], "token": token, "expiry": expiry}
     _session_file().write_text(json.dumps(session))
+    if save_password:
+        keyring.set_password(KEYRING_SERVICE, email, password)
     return session
+
+
+def _expired(data):
+    expiry = data.get("expiry")
+    return isinstance(expiry, (int, float)) and (expiry / 1000 if expiry > 1e11 else expiry) < time.time() + 300
+
+
+def relogin():
+    path = _session_file()
+    email = json.loads(path.read_text()).get("email") if path.exists() else None
+    password = email and keyring.get_password(KEYRING_SERVICE, email)
+    if not password:
+        raise AppleError("Apple session expired and no saved password; run: py marsign.py login")
+
+    def no_code(_):
+        raise AppleError("Apple asked for a 2FA code; run: py marsign.py login")
+
+    print(f"Signing in again as {email}...")
+    return login(email, password, no_code)
 
 
 def session():
@@ -223,11 +248,15 @@ def session():
     if not path.exists():
         raise AppleError("Not signed in; run: py marsign.py login")
     data = json.loads(path.read_text())
-    expiry = data.get("expiry")
-    if isinstance(expiry, (int, float)) and (expiry / 1000 if expiry > 1e11 else expiry) < time.time():
-        raise AppleError("Apple session expired; run: py marsign.py login")
-    return data
+    return relogin() if _expired(data) else data
 
 
 def logout():
-    _session_file().unlink(missing_ok=True)
+    path = _session_file()
+    if path.exists():
+        email = json.loads(path.read_text()).get("email")
+        try:
+            keyring.delete_password(KEYRING_SERVICE, email)
+        except keyring.errors.PasswordDeleteError:
+            pass
+    path.unlink(missing_ok=True)

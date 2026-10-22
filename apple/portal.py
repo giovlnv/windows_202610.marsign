@@ -18,7 +18,7 @@ MACHINE_NAME = "Marsign"
 P12_PASSWORD = "marsign"
 
 
-def _call(endpoint, params=None, team=None):
+def _call(endpoint, params=None, team=None, _retry=True):
     s = account.session()
     body = {"clientId": CLIENT_ID, "protocolVersion": "QH65B2", "requestId": str(uuid.uuid4()).upper(),
             "userLocale": ["en_US"]}
@@ -33,7 +33,10 @@ def _call(endpoint, params=None, team=None):
                           "X-Apple-I-Identity-Id": s["adsid"],
                       })
     if r.status_code == 401:
-        raise AppleError("Apple session expired; run: py marsign.py login")
+        if not _retry:
+            raise AppleError("Apple session expired; run: py marsign.py login")
+        account.relogin()
+        return _call(endpoint, params, team, _retry=False)
     r.raise_for_status()
     result = plistlib.loads(r.content)
     if result.get("resultCode") not in (0, None, "0"):
