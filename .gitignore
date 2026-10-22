@@ -1,3 +1,6 @@
 __pycache__/
 *.ipa
 .venv/
+tools/
+*.p12
+*.mobileprovision

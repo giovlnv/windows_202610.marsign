@@ -8,6 +8,8 @@ from pymobiledevice3.services.installation_proxy import InstallationProxyService
 from pymobiledevice3.exceptions import ConnectionFailedToUsbmuxdError
 from pymobiledevice3.usbmux import list_devices
 
+import signer
+
 
 async def connect(udid=None):
     devices = await list_devices()
@@ -47,10 +49,48 @@ async def cmd_apps(args):
         await lockdown.close()
 
 
-async def cmd_install(args):
-    ipa = Path(args.ipa)
+def add_signing_args(parser, required):
+    parser.add_argument("--p12", required=required, help="signing certificate (.p12)")
+    parser.add_argument("--profile", required=required, help="provisioning profile (.mobileprovision)")
+    parser.add_argument("--password", default="", help="password for the .p12")
+
+
+def check_ipa(path):
+    ipa = Path(path)
     if not ipa.is_file():
         sys.exit(f"File not found: {ipa}")
+    return ipa
+
+
+def do_sign(args, ipa):
+    out, info = signer.sign(ipa, args.p12, args.profile, args.password, getattr(args, "output", None))
+    print(f"Signed {info['bundle_id']} (team {info['team']}, profile expires {info['expires']:%Y-%m-%d}) -> {out}")
+    return out
+
+
+async def cmd_setup(args):
+    print(f"zsign ready: {signer.ensure_zsign()}")
+
+
+async def cmd_sign(args):
+    do_sign(args, check_ipa(args.ipa))
+
+
+async def cmd_profile(args):
+    info = signer.read_profile(args.profile)
+    print(f"Name:      {info['name']}")
+    print(f"Bundle ID: {info['bundle_id']}")
+    print(f"Team:      {info['team']}")
+    print(f"Expires:   {info['expires']:%Y-%m-%d %H:%M}")
+    print(f"Devices:   {', '.join(info['devices']) or 'none'}")
+
+
+async def cmd_install(args):
+    ipa = check_ipa(args.ipa)
+    if args.p12 or args.profile:
+        if not (args.p12 and args.profile):
+            sys.exit("Signing needs both --p12 and --profile")
+        ipa = do_sign(args, ipa)
 
     def progress(percent, *_):
         print(f"\r{percent:3d}%", end="", flush=True)
@@ -70,11 +110,22 @@ def main():
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("devices", help="list connected devices")
     sub.add_parser("apps", help="list installed user apps")
-    install = sub.add_parser("install", help="install a signed .ipa")
+    sub.add_parser("setup", help="download zsign")
+    sign = sub.add_parser("sign", help="sign an .ipa")
+    sign.add_argument("ipa")
+    sign.add_argument("-o", "--output", help="output path (default: <name>-signed.ipa)")
+    add_signing_args(sign, required=True)
+    profile = sub.add_parser("profile", help="show what a provisioning profile allows")
+    profile.add_argument("profile")
+    install = sub.add_parser("install", help="install an .ipa, signing it first if --p12/--profile are given")
     install.add_argument("ipa")
+    add_signing_args(install, required=False)
 
     args = parser.parse_args()
-    handlers = {"devices": cmd_devices, "apps": cmd_apps, "install": cmd_install}
+    handlers = {
+        "devices": cmd_devices, "apps": cmd_apps, "setup": cmd_setup,
+        "sign": cmd_sign, "profile": cmd_profile, "install": cmd_install,
+    }
     try:
         asyncio.run(handlers[args.command](args))
     except ConnectionFailedToUsbmuxdError:
