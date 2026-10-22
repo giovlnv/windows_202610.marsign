@@ -123,27 +123,64 @@ def _twofa_headers(spd, json_body=False):
     }
 
 
-def _second_factor(spd, kind, ask_code):
-    if kind in ("trustedDeviceSecondaryAuth", "codeAlreadySent"):
-        if kind != "codeAlreadySent":
-            r = _http("GET", f"{GSA}/auth/verify/trusteddevice", _twofa_headers(spd))
-            if r.status_code not in (200, 409):
-                print(f"(Apple answered HTTP {r.status_code} when asked for a code; use the one on your device if it arrived)")
-        code = ask_code("Enter the code shown on your Apple device: ")
-        r = _http("GET", f"{GSA}/grandslam/GsService2/validate", {**_twofa_headers(spd), "security-code": code})
-        if r.status_code >= 400:
-            raise AppleError(f"Code rejected (HTTP {r.status_code})")
-        _check(_plist(r.content), "code check")
-    else:
-        body = {"phoneNumber": {"id": 1}, "mode": "sms"}
-        r = _http("PUT", f"{GSA}/auth/verify/phone", _twofa_headers(spd, True), json.dumps(body))
-        if r.status_code not in (200, 201, 202, 423):
-            raise AppleError(f"Apple did not send an SMS code (HTTP {r.status_code})")
+def _sms(spd, ask_code):
+    r = _http("GET", f"{GSA}/auth", _twofa_headers(spd, True))
+    try:
+        numbers = r.json().get("trustedPhoneNumbers", [])
+    except ValueError:
+        numbers = []
+    number_id = 1
+    if numbers:
+        for n in numbers:
+            print(f"  {n.get('id')}: {n.get('numberWithDialCode') or n.get('obfuscatedNumber')}")
+        choice = ask_code("Phone number id to text [first]: ")
+        number_id = int(choice) if choice.isdigit() else numbers[0]["id"]
+    body = {"phoneNumber": {"id": number_id}, "mode": "sms"}
+    r = _http("PUT", f"{GSA}/auth/verify/phone", _twofa_headers(spd, True), json.dumps(body))
+    if r.status_code not in (200, 201, 202, 412, 423):
+        raise AppleError(f"Apple did not send an SMS code (HTTP {r.status_code}): {r.text[:200]}")
+    while True:
         code = ask_code("Enter the code sent by SMS: ")
-        body["securityCode"] = {"code": code}
-        r = _http("POST", f"{GSA}/auth/verify/phone/securitycode", _twofa_headers(spd, True), json.dumps(body))
-        if r.status_code != 200:
-            raise AppleError(f"Code rejected (HTTP {r.status_code})")
+        r = _http("POST", f"{GSA}/auth/verify/phone/securitycode", _twofa_headers(spd, True),
+                  json.dumps({**body, "securityCode": {"code": code}}))
+        if r.status_code == 200:
+            return
+        if "-21669" in r.text:
+            print("Incorrect code, try again.")
+            continue
+        raise AppleError(f"SMS code rejected (HTTP {r.status_code}): {r.text[:200]}")
+
+
+def _trigger_trusted(spd):
+    r = _http("GET", f"{GSA}/auth/verify/trusteddevice", _twofa_headers(spd))
+    if r.status_code not in (200, 409):
+        print(f"(Apple answered HTTP {r.status_code} when asked to send a code)")
+
+
+def _second_factor(spd, kind, ask_code):
+    if kind not in ("trustedDeviceSecondaryAuth", "codeAlreadySent"):
+        return _sms(spd, ask_code)
+    if kind == "trustedDeviceSecondaryAuth":
+        _trigger_trusted(spd)
+    print("A code should appear on your iPhone or other Apple devices.")
+    print("No code? Press Enter to ask for it again, or type sms for a text message.")
+    while True:
+        code = ask_code("Code: ")
+        if not code:
+            _trigger_trusted(spd)
+            continue
+        if code.lower() == "sms":
+            return _sms(spd, ask_code)
+        r = _http("GET", f"{GSA}/grandslam/GsService2/validate", {**_twofa_headers(spd), "security-code": code})
+        if r.status_code < 400:
+            body = _plist(r.content)
+            status = body.get("Status", body)
+            if status.get("ec", 0) == -21669:
+                print("Incorrect code, try again.")
+                continue
+            _check(body, "code check")
+            return
+        raise AppleError(f"Code rejected (HTTP {r.status_code})")
 
 
 def _app_token(spd):
