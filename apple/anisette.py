@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import plistlib
+import time
 import uuid
 
 import requests
@@ -17,6 +18,7 @@ BAG_CLIENT_INFO = "<Mac15,7> <macOS;27.0;26A5378j> <com.apple.AuthKit/1 (com.app
 
 _client = None
 _state = None
+_cached = (0, None)
 
 
 def _state_file():
@@ -106,6 +108,9 @@ def _load(reset=False):
 
 
 def headers(sim=None, _retry=True):
+    global _cached
+    if not sim and _cached[1] and time.time() - _cached[0] < 60:
+        return dict(_cached[1])
     _load()
     device_id, md_lu = _identity()
     body = {"identifier": _state["identifier"], "adi_pb": _state["adi_pb"]}
@@ -120,9 +125,11 @@ def headers(sim=None, _retry=True):
             _load(reset=True)
             return headers(sim, _retry=False)
         raise AppleError(f"Anisette server error: {message or data}")
-    return {
+    result = {
         "X-Mme-Device-Id": device_id,
         "X-Apple-I-MD": data["X-Apple-I-MD"],
         "X-Apple-I-MD-M": data["X-Apple-I-MD-M"],
         "X-Apple-I-MD-RINFO": data.get("X-Apple-I-MD-RINFO", "17106176"),
     }
+    _cached = (time.time(), result)
+    return dict(result)

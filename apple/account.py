@@ -149,9 +149,17 @@ def _second_factor(spd, kind, ask_code):
 def _app_token(spd):
     sk, adsid = spd["sk"], spd["adsid"]
     checksum = hmac.new(sk, b"apptokens" + adsid.encode() + XCODE_APP.encode(), hashlib.sha256).digest()
-    res = _gs({"u": adsid, "app": [XCODE_APP], "c": spd["c"], "t": spd["GsIdmsToken"],
-               "checksum": checksum, "o": "apptokens"}, anisette.headers())
-    _check(res, "Xcode token")
+    for attempt in range(3):
+        try:
+            res = _gs({"u": adsid, "app": [XCODE_APP], "c": spd["c"], "t": spd["GsIdmsToken"],
+                       "checksum": checksum, "o": "apptokens"}, anisette.headers())
+            _check(res, "Xcode token")
+            break
+        except AppleError as e:
+            if attempt == 2 or not any(code in str(e) for code in ("-80046", "HTTP 50")):
+                raise
+            print(f"Apple refused the Xcode token, retrying in {5 * (attempt + 1)}s...")
+            time.sleep(5 * (attempt + 1))
     et = res["et"]
     if et[:3] != b"XYZ":
         raise AppleError("Malformed app token from Apple")
