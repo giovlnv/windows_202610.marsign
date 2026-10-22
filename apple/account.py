@@ -48,10 +48,11 @@ def _plist(raw):
         return plistlib.loads(PLIST_PROLOG + raw)
 
 
-def _check(body):
+def _check(body, step=""):
     status = body.get("Status", body)
     if status.get("ec", 0) != 0:
-        raise AppleError(f"Apple error {status['ec']}: {status.get('em', 'unknown')}")
+        where = f" (at {step})" if step else ""
+        raise AppleError(f"Apple error {status['ec']}{where}: {status.get('em', 'unknown')}")
 
 
 def _gs(params, ani):
@@ -78,7 +79,7 @@ def _srp_login(email, password):
     user = srp.User(email, b"", hash_alg=srp.SHA256, ng_type=srp.NG_2048)
     _, a = user.start_authentication()
     init = _gs({"A2k": a, "ps": ["s2k", "s2k_fo"], "u": email, "o": "init"}, ani)
-    _check(init)
+    _check(init, "sign-in start")
 
     digest = hashlib.sha256(password.encode()).digest()
     if init.get("sp") == "s2k_fo":
@@ -89,7 +90,7 @@ def _srp_login(email, password):
         raise AppleError("Sign-in failed: bad server challenge")
 
     done = _gs({"c": init["c"], "M1": m1, "u": email, "o": "complete"}, ani)
-    _check(done)
+    _check(done, "password check")
     user.verify_session(done["M2"])
     if not user.authenticated():
         raise AppleError("Sign-in failed: server could not be verified")
@@ -132,7 +133,7 @@ def _second_factor(spd, kind, ask_code):
         r = _http("GET", f"{GSA}/grandslam/GsService2/validate", {**_twofa_headers(spd), "security-code": code})
         if r.status_code >= 400:
             raise AppleError(f"Code rejected (HTTP {r.status_code})")
-        _check(_plist(r.content))
+        _check(_plist(r.content), "code check")
     else:
         body = {"phoneNumber": {"id": 1}, "mode": "sms"}
         r = _http("PUT", f"{GSA}/auth/verify/phone", _twofa_headers(spd, True), json.dumps(body))
@@ -150,7 +151,7 @@ def _app_token(spd):
     checksum = hmac.new(sk, b"apptokens" + adsid.encode() + XCODE_APP.encode(), hashlib.sha256).digest()
     res = _gs({"u": adsid, "app": [XCODE_APP], "c": spd["c"], "t": spd["GsIdmsToken"],
                "checksum": checksum, "o": "apptokens"}, anisette.headers())
-    _check(res)
+    _check(res, "Xcode token")
     et = res["et"]
     if et[:3] != b"XYZ":
         raise AppleError("Malformed app token from Apple")
@@ -162,6 +163,7 @@ def login(email, password, ask_code):
     spd, second = _srp_login(email, password)
     if second:
         _second_factor(spd, second, ask_code)
+        print("Code accepted, finishing sign-in...")
         spd, second = _srp_login(email, password)
         if second:
             raise AppleError("Apple still wants a verification code; try again")
