@@ -103,8 +103,8 @@ def _srp_login(email, password):
     second = status.get("au")
     if second == "repair":
         second = None
-    elif not second and status.get("hsc") == 409:
-        second = "trustedDeviceSecondaryAuth"
+    elif status.get("hsc") == 409:
+        second = "codeAlreadySent"
     return spd, second
 
 
@@ -123,10 +123,11 @@ def _twofa_headers(spd, json_body=False):
 
 
 def _second_factor(spd, kind, ask_code):
-    if kind == "trustedDeviceSecondaryAuth":
-        r = _http("GET", f"{GSA}/auth/verify/trusteddevice", _twofa_headers(spd))
-        if r.status_code not in (200, 409):
-            raise AppleError(f"Apple did not send a code (HTTP {r.status_code})")
+    if kind in ("trustedDeviceSecondaryAuth", "codeAlreadySent"):
+        if kind != "codeAlreadySent":
+            r = _http("GET", f"{GSA}/auth/verify/trusteddevice", _twofa_headers(spd))
+            if r.status_code not in (200, 409):
+                print(f"(Apple answered HTTP {r.status_code} when asked for a code; use the one on your device if it arrived)")
         code = ask_code("Enter the code shown on your Apple device: ")
         r = _http("GET", f"{GSA}/grandslam/GsService2/validate", {**_twofa_headers(spd), "security-code": code})
         if r.status_code >= 400:
