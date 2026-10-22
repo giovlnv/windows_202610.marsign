@@ -28,8 +28,9 @@ Manual signing, without an Apple ID:
 `%LOCALAPPDATA%\Marsign`: the Apple session token, this PC's device identity, the signing key and
 certificate, and provisioning profiles. The password is never saved.
 
-Apple only accepts Windows-type device identity data now, so Marsign gets it from an anisette v3 server
-(`https://ani.jkcoxson.com` by default, the one iloader uses; set `MARSIGN_ANISETTE` to change it).
+Apple rejects locally generated device identity data now, so Marsign gets it from an anisette v3 server:
+`mac-ani.jkcoxson.com` by default, the same as iloader. Alternatives are `new.ani.sidestore.io` and
+`ani3.stikstore.app`; set `MARSIGN_ANISETTE` to use one.
 The server sees this PC's device identifier, never the Apple ID, password or codes.
 
 The certificate is registered under the machine name "Marsign", so it lives alongside AltStore's

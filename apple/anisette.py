@@ -11,7 +11,11 @@ from websockets.sync.client import connect
 
 from . import AppleError, ca_bundle, data_dir
 
-SERVER = os.environ.get("MARSIGN_ANISETTE", "https://ani.jkcoxson.com")
+# Same list and order as iloader (2026-10-21); its Windows servers only work about half the time.
+SERVERS = ["https://mac-ani.jkcoxson.com", "https://new.ani.sidestore.io", "https://ani3.stikstore.app"]
+SERVER = os.environ.get("MARSIGN_ANISETTE", SERVERS[0])
+if not SERVER.startswith("http"):
+    SERVER = "https://" + SERVER
 XCODE_VERSION = "27.0 (27A5218g)"
 # Apple serves the provisioning URL bag only to a Mac identity.
 BAG_CLIENT_INFO = "<Mac15,7> <macOS;27.0;26A5378j> <com.apple.AuthKit/1 (com.apple.akd/1.0)>"
@@ -22,7 +26,8 @@ _cached = (0, None)
 
 
 def _state_file():
-    return data_dir() / "anisette.json"
+    host = SERVER.split("://", 1)[1].strip("/").replace("/", "_")
+    return data_dir() / f"anisette-{host}.json"
 
 
 def client():
@@ -31,8 +36,6 @@ def client():
         r = requests.get(f"{SERVER}/v3/client_info", timeout=30)
         r.raise_for_status()
         _client = r.json()
-        if "Windows" not in _client["client_info"]:
-            raise AppleError(f"Anisette server doesn't report a Windows identity: {_client['client_info']}")
     return _client
 
 
