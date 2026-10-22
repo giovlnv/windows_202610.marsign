@@ -1,5 +1,5 @@
 pymobiledevice3>=11.42
-Anisette>=1.2.4
+websockets>=13
 srp>=1.0.22
 cryptography>=44
 certifi>=2024.1.1

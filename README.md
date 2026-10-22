@@ -28,6 +28,10 @@ Manual signing, without an Apple ID:
 `%LOCALAPPDATA%\Marsign`: the Apple session token, this PC's device identity, the signing key and
 certificate, and provisioning profiles. The password is never saved.
 
+Apple only accepts Windows-type device identity data now, so Marsign gets it from an anisette v3 server
+(`https://ani.jkcoxson.com` by default, the one iloader uses; set `MARSIGN_ANISETTE` to change it).
+The server sees this PC's device identifier, never the Apple ID, password or codes.
+
 The certificate is registered under the machine name "Marsign", so it lives alongside AltStore's
 or Xcode's instead of replacing them. Only older Marsign certificates are ever revoked.
 
@@ -35,8 +39,8 @@ or Xcode's instead of replacing them. Only older Marsign certificates are ever r
 
 The Apple sign-in and developer-portal flow follows [iPASide](https://github.com/pwnapplehat/iPASide)
 (MIT). Signing uses [zsign](https://github.com/zhlynn/zsign); device access uses
-[pymobiledevice3](https://github.com/doronz88/pymobiledevice3); device identity uses
-[Anisette](https://pypi.org/project/Anisette/).
+[pymobiledevice3](https://github.com/doronz88/pymobiledevice3); the anisette v3 protocol follows
+[isideload](https://github.com/nab138/isideload), iloader's library.
 
 ## Roadmap
 

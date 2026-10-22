@@ -20,23 +20,17 @@ P12_PASSWORD = "marsign"
 
 def _call(endpoint, params=None, team=None):
     s = account.session()
-    ani = anisette.headers()
-    body = {"clientId": CLIENT_ID, "protocolVersion": "QH65B2", "requestId": str(uuid.uuid4()).upper()}
+    body = {"clientId": CLIENT_ID, "protocolVersion": "QH65B2", "requestId": str(uuid.uuid4()).upper(),
+            "userLocale": ["en_US"]}
     if team:
         body["teamId"] = team
     body.update(params or {})
     r = requests.post(f"{BASE}{endpoint}?clientId={CLIENT_ID}", data=plistlib.dumps(body), timeout=30,
                       verify=ca_bundle(), headers={
-                          "Content-Type": "text/x-xml-plist",
-                          "Accept": "text/x-xml-plist",
-                          "Accept-Language": "en-us",
-                          "User-Agent": "Xcode",
-                          "X-Apple-App-Info": "com.apple.gs.xcode.auth",
-                          "X-Xcode-Version": "11.2 (11B41)",
-                          "X-Apple-I-Identity-Id": s["adsid"],
+                          **anisette.base_headers(),
+                          **anisette.headers(),
                           "X-Apple-GS-Token": s["token"],
-                          "X-Apple-I-Locale": ani["X-Apple-Locale"],
-                          **ani,
+                          "X-Apple-I-Identity-Id": s["adsid"],
                       })
     if r.status_code == 401:
         raise AppleError("Apple session expired; run: py marsign.py login")

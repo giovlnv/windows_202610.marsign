@@ -18,7 +18,6 @@ srp.no_username_in_x()
 
 GSA = "https://gsa.apple.com"
 XCODE_APP = "com.apple.gs.xcode.auth"
-XCODE_VERSION = "11.2 (11B41)"
 PLIST_PROLOG = (
     b'<?xml version="1.0" encoding="UTF-8"?>\n'
     b'<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
@@ -55,19 +54,24 @@ def _check(body, step=""):
         raise AppleError(f"Apple error {status['ec']}{where}: {status.get('em', 'unknown')}")
 
 
+def _cpd(ani):
+    cpd = {"bootstrap": "true", "icscrec": "true", "loc": "en_US", "pbe": "false", "prkgen": "true", "svct": "iCloud"}
+    cpd.update({k: ani[k] for k in ("X-Mme-Device-Id", "X-Apple-I-MD", "X-Apple-I-MD-M")})
+    return cpd
+
+
 def _gs(params, ani):
-    cpd = {"bootstrap": True, "icscrec": True, "pbe": False, "prkgen": True, "svct": "iCloud",
-           "loc": ani["X-Apple-Locale"], **{k: v for k, v in ani.items() if k != "X-MMe-Client-Info"}}
-    body = {"Header": {"Version": "1.0.1"}, "Request": {"cpd": cpd, **params}}
-    r = _http("POST", f"{GSA}/grandslam/GsService2", {
-        "Content-Type": "text/x-xml-plist",
-        "Accept": "*/*",
-        "User-Agent": "akd/1.0 CFNetwork/978.0.7 Darwin/18.7.0",
-        "X-MMe-Client-Info": ani["X-MMe-Client-Info"],
-    }, plistlib.dumps(body))
+    body = {"Header": {"Version": "1.0.1"}, "Request": {"cpd": _cpd(ani), **params}}
+    r = _http("POST", f"{GSA}/grandslam/GsService2", anisette.base_headers(), plistlib.dumps(body))
     if r.status_code >= 400:
         raise AppleError(f"Apple sign-in failed (HTTP {r.status_code}); try again")
-    return _plist(r.content)["Response"]
+    res = _plist(r.content)["Response"]
+    status = res.get("Status", {})
+    if status.get("hsc") == 434 and status.get("X-Apple-I-MD-DATA") and params.get("o") == "init":
+        sim = status["X-Apple-I-MD-DATA"]
+        sim = base64.b64encode(sim).decode() if isinstance(sim, bytes) else sim
+        return _gs(params, anisette.headers(sim=sim))
+    return res
 
 
 def _hmac(key, label):
@@ -89,7 +93,7 @@ def _srp_login(email, password):
     if m1 is None:
         raise AppleError("Sign-in failed: bad server challenge")
 
-    done = _gs({"c": init["c"], "M1": m1, "u": email, "o": "complete"}, ani)
+    done = _gs({"c": init["c"], "M1": m1, "u": email, "o": "complete"}, anisette.headers())
     _check(done, "password check")
     user.verify_session(done["M2"])
     if not user.authenticated():
@@ -112,14 +116,10 @@ def _srp_login(email, password):
 def _twofa_headers(spd, json_body=False):
     token = base64.b64encode(f"{spd['adsid']}:{spd['GsIdmsToken']}".encode()).decode()
     return {
-        "Content-Type": "application/json" if json_body else "text/x-xml-plist",
-        "Accept": "application/json, text/html" if json_body else "text/x-xml-plist",
-        "Accept-Language": "en-us",
-        "User-Agent": "Xcode",
-        "X-Apple-Identity-Token": token,
-        "X-Apple-App-Info": XCODE_APP,
-        "X-Xcode-Version": XCODE_VERSION,
+        **anisette.base_headers(json_body),
         **anisette.headers(),
+        "Accept-Language": "en-us",
+        "X-Apple-Identity-Token": token,
     }
 
 
